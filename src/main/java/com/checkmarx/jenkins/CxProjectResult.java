@@ -6,11 +6,10 @@ import hudson.PluginWrapper;
 import hudson.maven.MavenModuleSet;
 import hudson.model.Action;
 import hudson.model.TransientProjectActionFactory;
-import hudson.model.AbstractBuild;
+import hudson.model.Run;
 import hudson.model.AbstractProject;
 import hudson.model.Hudson;
 import hudson.model.Project;
-import hudson.tasks.test.AbstractTestResultAction;
 import hudson.util.Area;
 import hudson.util.ChartUtil;
 import hudson.util.DataSetBuilder;
@@ -54,7 +53,7 @@ public class CxProjectResult implements Action {
 	}
 
 	public CxScanResult getLastBuildAction() {
-		AbstractBuild<?, ?> r = this.owner.getLastBuild();
+		Run<?, ?> r = this.owner.getLastBuild();
 		while (r != null) {
 
 			CxScanResult a = r.getAction(CxScanResult.class);
@@ -124,7 +123,7 @@ public class CxProjectResult implements Action {
 		}
 
 		CxScanResult cxScanResult = getLastBuildAction();
-		if (cxScanResult != null && req.checkIfModified(cxScanResult.owner.getTimestamp(), rsp)) {
+		if (cxScanResult != null && req.checkIfModified(cxScanResult.getOwner().getTimestamp(), rsp)) {
 			return;
 		}
 
@@ -136,7 +135,7 @@ public class CxProjectResult implements Action {
 	 */
 	public void doGraphMap(StaplerRequest req, StaplerResponse rsp) throws IOException {
 		CxScanResult cxScanResult = getLastBuildAction();
-		if (cxScanResult != null && req.checkIfModified(cxScanResult.owner.getTimestamp(), rsp)) {
+		if (cxScanResult != null && req.checkIfModified(cxScanResult.getOwner().getTimestamp(), rsp)) {
 			return;
 		}
 		ChartUtil.generateClickableMap(req, rsp, createChart(req, buildDataSet(req)), calcDefaultSize());
@@ -174,9 +173,9 @@ public class CxProjectResult implements Action {
 			DataSetBuilder<CxResultSeverity, ChartUtil.NumberOnlyBuildLabel> dsb = new DataSetBuilder<CxResultSeverity, ChartUtil.NumberOnlyBuildLabel>();
 
 			for (CxScanResult a = lastBuildAction; a != null; a = a.getPreviousResult()) {
-				dsb.add(a.getHighCount(), CxResultSeverity.HIGH, new ChartUtil.NumberOnlyBuildLabel(a.owner));
-				dsb.add(a.getMediumCount(), CxResultSeverity.MEDIUM, new ChartUtil.NumberOnlyBuildLabel(a.owner));
-				dsb.add(a.getLowCount(), CxResultSeverity.LOW, new ChartUtil.NumberOnlyBuildLabel(a.owner));
+				dsb.add(a.getHighCount(), CxResultSeverity.HIGH, new ChartUtil.NumberOnlyBuildLabel(a.getOwner()));
+				dsb.add(a.getMediumCount(), CxResultSeverity.MEDIUM, new ChartUtil.NumberOnlyBuildLabel(a.getOwner()));
+				dsb.add(a.getLowCount(), CxResultSeverity.LOW, new ChartUtil.NumberOnlyBuildLabel(a.getOwner()));
 			}
 			return dsb.build();
 		}
@@ -232,15 +231,7 @@ public class CxProjectResult implements Action {
 			@Override
 			public String generateToolTip(CategoryDataset dataset, int row, int column) {
 				ChartUtil.NumberOnlyBuildLabel label = (ChartUtil.NumberOnlyBuildLabel) dataset.getColumnKey(column);
-				AbstractTestResultAction a = label.build.getAction(AbstractTestResultAction.class);
-				switch (row) {
-				case 0:
-					return String.valueOf(hudson.tasks.test.Messages.AbstractTestResultAction_fail(label.build.getDisplayName(), a.getFailCount()));
-				case 1:
-					return String.valueOf(hudson.tasks.test.Messages.AbstractTestResultAction_skip(label.build.getDisplayName(), a.getSkipCount()));
-				default:
-					return String.valueOf(hudson.tasks.test.Messages.AbstractTestResultAction_test(label.build.getDisplayName(), a.getTotalCount()));
-				}
+				return "CheckmarxPlugin :: Not implemented yet!";
 			}
 		};
 		plot.setRenderer(ar);

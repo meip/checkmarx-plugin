@@ -6,12 +6,13 @@ import static com.checkmarx.jenkins.CxResultSeverity.LOW;
 import static com.checkmarx.jenkins.CxResultSeverity.MEDIUM;
 import hudson.PluginWrapper;
 import hudson.model.Action;
-import hudson.model.AbstractBuild;
 import hudson.model.Hudson;
+import hudson.model.Run;
 import hudson.util.IOUtils;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -22,6 +23,7 @@ import javax.xml.parsers.SAXParserFactory;
 
 import jenkins.model.Jenkins;
 
+import jenkins.model.RunAction2;
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
@@ -38,14 +40,13 @@ import com.thoughtworks.xstream.annotations.XStreamOmitField;
  * @author denis
  * @since 3/11/13
  */
-public class CxScanResult implements Action {
+public class CxScanResult implements Action, Serializable, RunAction2 {
 
 	@XStreamOmitField
 	private final Logger logger;
 
-	public final AbstractBuild<?, ?> owner;
+	private transient Run<?, ?> owner;
 	private String serverUrl;
-
 	private int highCount;
 	private int mediumCount;
 	private int lowCount;
@@ -74,9 +75,9 @@ public class CxScanResult implements Action {
 	private boolean resultIsValid;
 	private String errorMessage;
 
-	public CxScanResult(final AbstractBuild owner, final String loggerSuffix, String serverUrl) {
-		logger = CxLogUtils.loggerWithSuffix(getClass(), loggerSuffix);
+	public CxScanResult(final Run<?, ?> owner, final String loggerSuffix, String serverUrl) {
 		this.owner = owner;
+		logger = CxLogUtils.loggerWithSuffix(getClass(), loggerSuffix);
 		this.serverUrl = serverUrl;
 		this.resultIsValid = false;
 		this.errorMessage = "No Scan Results"; // error message to appear if results were not parsed
@@ -84,6 +85,10 @@ public class CxScanResult implements Action {
 		this.mediumQueryResultList = new LinkedList<>();
 		this.lowQueryResultList = new LinkedList<>();
 		this.infoQueryResultList = new LinkedList<>();
+	}
+
+	public Run<?, ?> getOwner() {
+		return owner;
 	}
 
 	@Override
@@ -220,7 +225,7 @@ public class CxScanResult implements Action {
 	 */
 
 	public CxScanResult getPreviousResult() {
-		AbstractBuild<?, ?> b = owner;
+		Run<?, ?> b = owner;
 		while (true) {
 			b = b.getPreviousBuild();
 			if (b == null) {
@@ -256,6 +261,16 @@ public class CxScanResult implements Action {
 			errorMessage = e.getMessage();
 			logger.warn(e);
 		}
+	}
+
+	@Override
+	public void onAttached(Run<?, ?> owner) {
+		this.owner = owner;
+	}
+
+	@Override
+	public void onLoad(Run<?, ?> owner) {
+		this.owner = owner;
 	}
 
 	private class ResultsParseHandler extends DefaultHandler {

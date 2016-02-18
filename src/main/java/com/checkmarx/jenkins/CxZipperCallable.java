@@ -10,6 +10,8 @@ import java.io.OutputStream;
 
 import org.apache.commons.codec.binary.Base64OutputStream;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang.NotImplementedException;
+import org.jenkinsci.remoting.RoleChecker;
 import org.jetbrains.annotations.NotNull;
 
 import com.checkmarx.components.zipper.ZipListener;
@@ -56,5 +58,10 @@ public class CxZipperCallable implements FilePath.FileCallable<CxZipResult> {
 
         final FilePath remoteTempFile = new FilePath(tempFile);
         return new CxZipResult(remoteTempFile, numOfZippedFiles, logMessage.toString());
+    }
+
+    @Override
+    public void checkRoles(RoleChecker checker) throws SecurityException {
+        throw new NotImplementedException("");
     }
 }

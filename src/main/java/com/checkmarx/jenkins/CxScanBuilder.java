@@ -1,23 +1,30 @@
 package com.checkmarx.jenkins;
 
-import hudson.AbortException;
-import hudson.EnvVars;
-import hudson.Extension;
-import hudson.FilePath;
-import hudson.Launcher;
-import hudson.model.BuildListener;
-import hudson.model.Result;
-import hudson.model.AbstractBuild;
-import hudson.model.AbstractProject;
-import hudson.model.Cause;
+import com.checkmarx.components.zipper.Zipper;
+import com.checkmarx.ws.CxJenkinsWebService.*;
+import com.thoughtworks.xstream.annotations.XStreamOmitField;
+import hudson.*;
+import hudson.model.*;
 import hudson.tasks.BuildStepDescriptor;
 import hudson.tasks.Builder;
 import hudson.triggers.SCMTrigger;
 import hudson.util.ComboBoxModel;
 import hudson.util.FormValidation;
-import hudson.util.Secret;
 import hudson.util.ListBoxModel;
+import hudson.util.Secret;
+import jenkins.tasks.SimpleBuildStep;
+import net.sf.json.JSONObject;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.log4j.*;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
+import org.kohsuke.stapler.QueryParameter;
+import org.kohsuke.stapler.StaplerRequest;
 
+import javax.xml.ws.WebServiceException;
 import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -27,40 +34,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.regex.Pattern;
 
-import javax.xml.ws.WebServiceException;
-
-import net.sf.json.JSONObject;
-
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.log4j.BasicConfigurator;
-import org.apache.log4j.FileAppender;
-import org.apache.log4j.Level;
-import org.apache.log4j.Logger;
-import org.apache.log4j.PatternLayout;
-import org.apache.log4j.WriterAppender;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.kohsuke.stapler.DataBoundConstructor;
-import org.kohsuke.stapler.QueryParameter;
-import org.kohsuke.stapler.StaplerRequest;
-
-import com.checkmarx.components.zipper.Zipper;
-import com.checkmarx.ws.CxJenkinsWebService.CliScanArgs;
-import com.checkmarx.ws.CxJenkinsWebService.ConfigurationSet;
-import com.checkmarx.ws.CxJenkinsWebService.CxWSBasicRepsonse;
-import com.checkmarx.ws.CxJenkinsWebService.CxWSCreateReportResponse;
-import com.checkmarx.ws.CxJenkinsWebService.CxWSReportType;
-import com.checkmarx.ws.CxJenkinsWebService.CxWSResponseRunID;
-import com.checkmarx.ws.CxJenkinsWebService.Group;
-import com.checkmarx.ws.CxJenkinsWebService.LocalCodeContainer;
-import com.checkmarx.ws.CxJenkinsWebService.Preset;
-import com.checkmarx.ws.CxJenkinsWebService.ProjectDisplayData;
-import com.checkmarx.ws.CxJenkinsWebService.ProjectSettings;
-import com.checkmarx.ws.CxJenkinsWebService.SourceCodeSettings;
-import com.checkmarx.ws.CxJenkinsWebService.SourceLocationType;
-import com.thoughtworks.xstream.annotations.XStreamOmitField;
-
 /**
  * The main entry point for Checkmarx plugin. This class implements the Builder
  * build stage that scans the source code.
@@ -69,7 +42,7 @@ import com.thoughtworks.xstream.annotations.XStreamOmitField;
  * @since 3/10/13
  */
 
-public class CxScanBuilder extends Builder {
+public class CxScanBuilder extends Builder implements SimpleBuildStep {
 
 
     //////////////////////////////////////////////////////////////////////////////////////
@@ -78,17 +51,17 @@ public class CxScanBuilder extends Builder {
 
     private boolean useOwnServerCredentials;
 
-    @Nullable private String serverUrl;
-    @Nullable private String username;
-    @Nullable private String password;
-    @Nullable private String projectName;
-    @Nullable private String groupId;
-    @Nullable private long projectId;
+    @Nullable private String serverUrl = null;
+    @Nullable private String username = null;
+    @Nullable private String password = null;
+    @Nullable private String projectName = null;
+    @Nullable private String groupId = null;
+    private long projectId;
 
-    @Nullable private String preset;
+    @Nullable private String preset = null;
     private boolean presetSpecified;
-    @Nullable private String excludeFolders;
-    @Nullable private String filterPattern;
+    @Nullable private String excludeFolders = null;
+    @Nullable private String filterPattern = null;
 
     private boolean incremental;
     private boolean fullScansScheduled;
@@ -96,8 +69,8 @@ public class CxScanBuilder extends Builder {
 
     private boolean isThisBuildIncremental;
 
-    @Nullable private String sourceEncoding;
-    @Nullable private String comment;
+    @Nullable private String sourceEncoding = null;
+    @Nullable private String comment = null;
 
     private boolean skipSCMTriggers;
     private boolean waitForResultsEnabled;
@@ -125,39 +98,40 @@ public class CxScanBuilder extends Builder {
     @XStreamOmitField
     private transient FileAppender fileAppender;
 
-	private JobStatusOnError jobStatusOnError;
+	private JobStatusOnError jobStatusOnError = JobStatusOnError.FAILURE;
 
     //////////////////////////////////////////////////////////////////////////////////////
     // Constructors
     //////////////////////////////////////////////////////////////////////////////////////
 
-    @DataBoundConstructor
-	public CxScanBuilder(
-			boolean useOwnServerCredentials, // NOSONAR
-                         @Nullable String serverUrl,
-                         @Nullable String username,
-                         @Nullable String password,
-                         String projectName,
-                         long projectId,
-                         String buildStep,
-                         @Nullable String groupId,
-                         @Nullable String preset,
- JobStatusOnError jobStatusOnError,
-                         boolean presetSpecified,
-                         @Nullable String excludeFolders,
-                         @Nullable String filterPattern,
-                         boolean incremental,
-                         boolean fullScansScheduled,
-                         int fullScanCycle,
-                         @Nullable String sourceEncoding,
-                         @Nullable String comment,
-                         boolean skipSCMTriggers,
-                         boolean waitForResultsEnabled,
-                         boolean vulnerabilityThresholdEnabled,
-                         int highThreshold,
-                         int mediumThreshold,
-                         int lowThreshold,
-                         boolean generatePdfReport) {
+    @Deprecated
+    public CxScanBuilder(
+            boolean useOwnServerCredentials, // NOSONAR
+            @Nullable String serverUrl,
+            @Nullable String username,
+            @Nullable String password,
+            String projectName,
+            long projectId,
+            String buildStep,
+            @Nullable String groupId,
+            @Nullable String preset,
+            JobStatusOnError jobStatusOnError,
+            boolean presetSpecified,
+            @Nullable String excludeFolders,
+            @Nullable String filterPattern,
+            boolean incremental,
+            boolean fullScansScheduled,
+            int fullScanCycle,
+            @Nullable String sourceEncoding,
+            @Nullable String comment,
+            boolean skipSCMTriggers,
+            boolean waitForResultsEnabled,
+            boolean vulnerabilityThresholdEnabled,
+            int highThreshold,
+            int mediumThreshold,
+            int lowThreshold,
+            boolean generatePdfReport) {
+        System.out.println("deprecated CxScanBuilder");
         this.useOwnServerCredentials = useOwnServerCredentials;
         this.serverUrl = serverUrl;
         this.username = username;
@@ -167,7 +141,7 @@ public class CxScanBuilder extends Builder {
         this.projectId = projectId;
         this.groupId = groupId;
         this.preset = preset;
-		this.jobStatusOnError = jobStatusOnError;
+        this.jobStatusOnError = jobStatusOnError;
         this.presetSpecified = presetSpecified;
         this.excludeFolders = excludeFolders;
         this.filterPattern = filterPattern;
@@ -183,6 +157,41 @@ public class CxScanBuilder extends Builder {
         this.mediumThreshold = mediumThreshold;
         this.lowThreshold = lowThreshold;
         this.generatePdfReport =  generatePdfReport;
+    }
+
+    @DataBoundConstructor
+    public CxScanBuilder(
+            boolean useOwnServerCredentials, // NOSONAR
+            String projectName,
+            long projectId,
+            String buildStep,
+            boolean presetSpecified,
+            boolean incremental,
+            boolean fullScansScheduled,
+            int fullScanCycle,
+            boolean skipSCMTriggers,
+            boolean waitForResultsEnabled,
+            boolean vulnerabilityThresholdEnabled,
+            int highThreshold,
+            int mediumThreshold,
+            int lowThreshold,
+            boolean generatePdfReport) {
+        this.useOwnServerCredentials = useOwnServerCredentials;
+        this.password = Secret.fromString(password).getEncryptedValue();
+        // Workaround for compatibility with Conditional BuildStep Plugin
+        this.projectName = (projectName == null) ? buildStep : projectName;
+        this.projectId = projectId;
+        this.presetSpecified = presetSpecified;
+        this.incremental = incremental;
+        this.fullScansScheduled = fullScansScheduled;
+        this.fullScanCycle = fullScanCycle;
+        this.skipSCMTriggers = skipSCMTriggers;
+        this.waitForResultsEnabled = waitForResultsEnabled;
+        this.vulnerabilityThresholdEnabled = vulnerabilityThresholdEnabled;
+        this.highThreshold = highThreshold;
+        this.mediumThreshold = mediumThreshold;
+        this.lowThreshold = lowThreshold;
+        this.generatePdfReport = generatePdfReport;
     }
 
     //////////////////////////////////////////////////////////////////////////////////////
@@ -297,10 +306,66 @@ public class CxScanBuilder extends Builder {
         return generatePdfReport;
     }
 
+    @DataBoundSetter
+    public void setServerUrl(String serverUrl) {
+        this.serverUrl = serverUrl;
+    }
+
+    @DataBoundSetter
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    @DataBoundSetter
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
+    @DataBoundSetter
+    public void setProjectName(String projectName) {
+        this.projectName = projectName;
+    }
+
+    @DataBoundSetter
+    public void setGroupId(String groupId) {
+        this.groupId = groupId;
+    }
+
+    @DataBoundSetter
+    public void setPreset(String preset) {
+        this.preset = preset;
+    }
+
+    @DataBoundSetter
+    public void setExcludeFolders(String excludeFolders) {
+        this.excludeFolders = excludeFolders;
+    }
+
+    @DataBoundSetter
+    public void setFilterPattern(String filterPattern) {
+        this.filterPattern = filterPattern;
+    }
+
+    @DataBoundSetter
+    public void setSourceEncoding(String sourceEncoding) {
+        this.sourceEncoding = sourceEncoding;
+    }
+
+    @DataBoundSetter
+    public void setComment(String comment) {
+        this.comment = comment;
+    }
+
     @Override
-    public boolean perform(final AbstractBuild<?, ?> build,
-                           final Launcher launcher,
-                           final BuildListener listener) throws InterruptedException, IOException {
+    public boolean perform(final AbstractBuild<?, ?> build, Launcher launcher, final BuildListener listener)
+            throws InterruptedException, IOException {
+        perform(build, build.getWorkspace(), launcher, listener);
+        return true;
+    }
+
+    @Override
+    public void perform(final Run<?, ?> build, FilePath workspace, Launcher launcher, final TaskListener listener)
+            throws InterruptedException, IOException {
 		final DescriptorImpl descriptor = getDescriptor();
 
 		CxWSResponseRunID cxWSResponseRunID = null;
@@ -313,14 +378,17 @@ public class CxScanBuilder extends Builder {
 
             initLogger(checkmarxBuildDir, listener, instanceLoggerSuffix(build));
 
-            listener.started(null);
+            // TODO WORKFLOW-MIGRATION
+            // listener.started(null);
             instanceLogger.info("Checkmarx Jenkins plugin version: " + CxConfig.version());
 
             if (isSkipScan(build)) {
                 instanceLogger.info("Checkmarx scan skipped since the build was triggered by SCM. " +
                         "Visit plugin configuration page to disable this skip.");
-                listener.finished(Result.SUCCESS);
-                return true;
+                // TODO WORKFLOW-MIGRATION
+                // listener.finished(Result.SUCCESS);
+                // TODO WORKFLOW-MIGRATION
+                // return true;
             }
 
             final String serverUrlToUse = isUseOwnServerCredentials() ? getServerUrl() : descriptor.getServerUrl();
@@ -333,23 +401,28 @@ public class CxScanBuilder extends Builder {
 
 
             instanceLogger.info("Checkmarx server login successful");
+            instanceLogger.info("Checkmarx server login successful");
 
-			cxWSResponseRunID = submitScan(build, cxWebService, listener);
+			cxWSResponseRunID = submitScan(build, cxWebService, workspace, listener);
             instanceLogger.info("\nScan job submitted successfully\n");
 
 
 
             if (!isWaitForResultsEnabled() && !descriptor.isForcingVulnerabilityThresholdEnabled()) {
-                listener.finished(Result.SUCCESS);
-                return true;
+                // TODO WORKFLOW-MIGRATION
+                // listener.finished(Result.SUCCESS);
+                // TODO WORKFLOW-MIGRATION
+                // return true;
             }
 
             long scanId = cxWebService.trackScanProgress(cxWSResponseRunID, usernameToUse, passwordToUse, descriptor.getScanTimeOutEnabled(), descriptor.getScanTimeoutDuration());
 
             if (scanId == 0) {
                 build.setResult(Result.UNSTABLE);
-                listener.finished(Result.UNSTABLE);
-                return true;
+                // TODO WORKFLOW-MIGRATION
+                // listener.finished(Result.UNSTABLE);
+                // TODO WORKFLOW-MIGRATION
+                // return true;
             }
 
 			reportResponse = cxWebService.generateScanReport(scanId, CxWSReportType.XML);
@@ -369,18 +442,24 @@ public class CxScanBuilder extends Builder {
 
 			if ((descriptor.isForcingVulnerabilityThresholdEnabled() || isVulnerabilityThresholdEnabled()) && isThresholdCrossed(cxScanResult)) {
                     build.setResult(Result.UNSTABLE); // Marks the build result as UNSTABLE
-                    listener.finished(Result.UNSTABLE);
-                    return true;
+                // TODO WORKFLOW-MIGRATION
+                // listener.finished(Result.UNSTABLE);
+                // TODO WORKFLOW-MIGRATION
+                // return true;
             }
 
-            listener.finished(Result.SUCCESS);
-            return true;
+            // TODO WORKFLOW-MIGRATION
+            // listener.finished(Result.SUCCESS);
+            // TODO WORKFLOW-MIGRATION
+            // return true;
 		} catch (IOException | WebServiceException e) {
 			instanceLogger.error(e.getMessage(), e);
 			if (useUnstableOnError(descriptor)) {
 				build.setResult(Result.UNSTABLE);
-				listener.finished(Result.UNSTABLE);
-				return true;
+				// TODO WORKFLOW-MIGRATION
+                // listener.finished(Result.UNSTABLE);
+				// TODO WORKFLOW-MIGRATION
+                // return true;
 			} else {
 				throw e;
 			}
@@ -453,12 +532,12 @@ public class CxScanBuilder extends Builder {
     }
 
 
-    private String instanceLoggerSuffix(final AbstractBuild<?, ?> build)
+    private String instanceLoggerSuffix(final Run<?, ?> build)
     {
-        return build.getProject().getDisplayName() + "-" + build.getDisplayName();
+        return build.getDisplayName();
     }
 
-    private void initLogger(final File checkmarxBuildDir, final BuildListener listener, final String loggerSuffix)
+    private void initLogger(final File checkmarxBuildDir, final TaskListener listener, final String loggerSuffix)
     {
         instanceLogger = CxLogUtils.loggerWithSuffix(getClass(), loggerSuffix);
         final WriterAppender writerAppender = new WriterAppender(new PatternLayout("%m%n"),listener.getLogger());
@@ -484,7 +563,7 @@ public class CxScanBuilder extends Builder {
         instanceLogger = LOGGER; // Redirect all logs back to static logger
     }
 
-    private CxWSResponseRunID submitScan(final AbstractBuild<?, ?> build, final CxWebService cxWebService, final BuildListener listener) throws IOException
+    private CxWSResponseRunID submitScan(final Run<?, ?> build, final CxWebService cxWebService, final FilePath workspace, final TaskListener listener) throws IOException
     {
         isThisBuildIncremental = isThisBuildIncremental(build.getNumber());
 
@@ -498,7 +577,7 @@ public class CxScanBuilder extends Builder {
 
         try {
             // hudson.FilePath will work in distributed Jenkins installation
-            FilePath baseDir = build.getWorkspace();
+            FilePath baseDir = workspace;
 			if (baseDir == null) {
 				throw new AbortException(
 						"Checkmarx Scan Failed: cannot acquire Jenkins workspace location. It can be due to workspace residing on a disconnected slave.");
@@ -656,7 +735,7 @@ public class CxScanBuilder extends Builder {
 
     // Check what triggered this build, and in case the trigger was SCM
     // and the build is configured to skip those triggers, return true.
-    private boolean isSkipScan(final AbstractBuild<?, ?> build)
+    private boolean isSkipScan(final Run<?, ?> build)
     {
 
         if (!isSkipSCMTriggers())
@@ -689,7 +768,7 @@ public class CxScanBuilder extends Builder {
         return (DescriptorImpl)super.getDescriptor();
     }
 
-	@Extension
+    @Extension
 	public static final class DescriptorImpl extends BuildStepDescriptor<Builder> {
 
 		public static final String DEFAULT_FILTER_PATTERNS = CxConfig.defaultFilterPattern();
